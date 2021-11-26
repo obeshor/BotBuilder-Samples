@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 """Handle date/time resolution for booking dialog."""
 
-ffrom datatypes_date_time.timex import Timex
+from datatypes_date_time.timex import Timex
 
 from botbuilder.core import MessageFactory
 from botbuilder.dialogs import WaterfallDialog, DialogTurnResult, WaterfallStepContext
