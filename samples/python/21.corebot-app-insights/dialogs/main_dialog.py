@@ -21,6 +21,17 @@ from flight_booking_recognizer import FlightBookingRecognizer
 from helpers.luis_helper import LuisHelper, Intent
 from .booking_dialog import BookingDialog
 
+import logging
+from opencensus.ext.azure.log_exporter import AzureLogHandler
+import json
+
+
+APPINSIGHT_IKEY = 'InstrumentationKey=74bc910f-6de3-4f0f-95ed-a195b191fed8'
+
+logger = logging.getLogger(__name__)
+logger.addHandler(AzureLogHandler(
+    connection_string=APPINSIGHT_IKEY)
+)
 
 class MainDialog(ComponentDialog):
     def __init__(
@@ -87,22 +98,24 @@ class MainDialog(ComponentDialog):
             self._luis_recognizer, step_context.context
         )
 
-        if intent == Intent.BOOK_FLIGHT.value and luis_result:
+        if intent == Intent.BOOK_TICKET_INTENT.value and luis_result:
             # Show a warning for Origin and Destination if we can't resolve them.
             await MainDialog._show_warning_for_unsupported_cities(
                 step_context.context, luis_result
             )
+            luis_result.user_input = step_context.context.activity.text
+            luis_result.luis_intent = intent
+            luis_result.luis_entities = {
+                "destination": luis_result.destination,
+                "origin": luis_result.origin,
+                "start": luis_result.start,
+                "end": luis_result.end,
+                "budget": luis_result.budget
+            }
+            print('\n• Detected entities (LUIS) :', luis_result.__dict__)
 
             # Run the BookingDialog giving it whatever details we have from the LUIS call.
             return await step_context.begin_dialog(self._booking_dialog_id, luis_result)
-
-        if intent == Intent.GET_WEATHER.value:
-            get_weather_text = "TODO: get weather flow here"
-            get_weather_message = MessageFactory.text(
-                get_weather_text, get_weather_text, InputHints.ignoring_input
-            )
-            await step_context.context.send_activity(get_weather_message)
-
         else:
             didnt_understand_text = (
                 "Sorry, I didn't get that. Please try asking in a different way"
@@ -114,11 +127,14 @@ class MainDialog(ComponentDialog):
 
         return await step_context.next(None)
 
+
     async def final_step(self, step_context: WaterfallStepContext) -> DialogTurnResult:
         # If the child dialog ("BookingDialog") was cancelled or the user failed to confirm,
         # the Result here will be null.
         if step_context.result is not None:
             result = step_context.result
+            print('>> TICKET BOOKING BOT UNDERSTANDING = OK \n\n•••••\n')
+            logger.warning('BOOKING_UNDERSTANDING_OK')
 
             # Now we have all the booking details call the booking service.
 
@@ -128,6 +144,15 @@ class MainDialog(ComponentDialog):
             msg_txt = f"I have you booked to {result.destination} from {result.origin} on {result.travel_date}"
             message = MessageFactory.text(msg_txt, msg_txt, InputHints.ignoring_input)
             await step_context.context.send_activity(message)
+
+        if step_context.result is None:
+            print('>> TICKET BOOKING BOT UNDERSTANDING = KO \n\n•••••\n')
+
+            with open('dialog_content.txt') as dialog_file:
+                dialog_content = json.load(dialog_file)
+           
+            properties = {'custom_dimensions': {'#_user_input': dialog_content['user_input'], '#_luis_intent': dialog_content['luis_intent'], '#_luis_entities': str(dialog_content['luis_entities']), '#_final_entities': str(dialog_content['final_entities'])}}
+            logger.warning('BOOKING_UNDERSTANDING_KO', extra=properties)
 
         prompt_message = "What else can I do for you?"
         return await step_context.replace_dialog(self.id, prompt_message)

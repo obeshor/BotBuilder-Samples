@@ -9,10 +9,9 @@ from booking_details import BookingDetails
 
 
 class Intent(Enum):
-    BOOK_FLIGHT = "BookFlight"
-    CANCEL = "Cancel"
-    GET_WEATHER = "GetWeather"
-    NONE_INTENT = "NoneIntent"
+    BOOK_TICKET_INTENT = "AskForTickets"
+    VALIDATION_INTENT = "ValidateChatBotAnswer"
+    NONE_INTENT = "None"
 
 
 def top_intent(intents: Dict[Intent, dict]) -> TopIntent:
@@ -51,17 +50,15 @@ class LuisHelper:
                 else None
             )
 
-            if intent == Intent.BOOK_FLIGHT.value:
+            if intent == Intent.BOOK_TICKET_INTENT.value:
                 result = BookingDetails()
 
                 # We need to get the result from the LUIS JSON which at every level returns an array.
                 to_entities = recognizer_result.entities.get("$instance", {}).get(
-                    "To", []
+                    "destination", []
                 )
                 if len(to_entities) > 0:
-                    if recognizer_result.entities.get("To", [{"$instance": {}}])[0][
-                        "$instance"
-                    ]:
+                    if recognizer_result.entities.get("destination", [{"$instance": {}}])[0]:
                         result.destination = to_entities[0]["text"].capitalize()
                     else:
                         result.unsupported_airports.append(
@@ -69,32 +66,43 @@ class LuisHelper:
                         )
 
                 from_entities = recognizer_result.entities.get("$instance", {}).get(
-                    "From", []
+                    "origin", []
                 )
                 if len(from_entities) > 0:
-                    if recognizer_result.entities.get("From", [{"$instance": {}}])[0][
-                        "$instance"
-                    ]:
+                    if recognizer_result.entities.get("origin", [{"$instance": {}}])[0]:
                         result.origin = from_entities[0]["text"].capitalize()
                     else:
                         result.unsupported_airports.append(
                             from_entities[0]["text"].capitalize()
                         )
 
-                # This value will be a TIMEX. And we are only interested in a Date so grab the first result and drop
-                # the Time part. TIMEX is a format that represents DateTime expressions that include some ambiguity.
-                # e.g. missing a Year.
-                date_entities = recognizer_result.entities.get("datetime", [])
-                if date_entities:
-                    timex = date_entities[0]["timex"]
+                budget_entities = recognizer_result.entities.get("$instance", {}).get(
+                    "budget", []
+                )
+                if len(budget_entities) > 0:
+                    result.budget = budget_entities[0]["text"]
 
-                    if timex:
-                        datetime = timex[0].split("T")[0]
-
-                        result.travel_date = datetime
-
+                daterange_entities = recognizer_result.entities.get("datetime", [])
+                if len(daterange_entities) > 0:
+                    if (daterange_entities[0]["type"] == "daterange") & (len(daterange_entities[0]["timex"][0].split(",")) > 1):
+                        result.start = daterange_entities[0]["timex"][0].split(",")[0][1:]
+                        result.end = daterange_entities[0]["timex"][0].split(",")[1][:]
+                    if (daterange_entities[0]["type"] == "daterange") & (len(daterange_entities[0]["timex"][0].split(",")) == 1):
+                        result.start = daterange_entities[0]["timex"][0].split(",")[0][:]
                 else:
-                    result.travel_date = None
+                    start_entities = recognizer_result.entities.get("start", [])
+                    if len(start_entities) > 0:
+                        result.start = start_entities[0]["timex"][0]
+                    
+                    end_entities = recognizer_result.entities.get("end", [])
+                    if len(end_entities) > 0:
+                        result.end = end_entities[0]["timex"][0]
+                    
+                print('\n• travel origin = {}'.format(result.origin))
+                print('• travel destination = {}'.format(result.destination))
+                print('• start date = {}'.format(result.start))
+                print('• end date = {}'.format(result.end))
+                print('• budget = {}'.format(result.budget))
 
         except Exception as exception:
             print(exception)
